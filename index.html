@@ -354,7 +354,7 @@
             container.innerHTML = '';
             
             try {
-                const q = query(collection(db, 'artifacts', appId, 'submissions'));
+                const q = query(collection(db, 'artifacts', appId, 'submissions'), orderBy("lastActive", "desc"));
                 const querySnapshot = await getDocs(q);
                 
                 if(querySnapshot.empty) {
@@ -387,17 +387,34 @@
                                     ${profile.cheatViolations > 0 ? `<div class="mb-4 bg-red-500/10 border border-red-500/30 px-2 py-1 rounded text-[10px] text-red-400 font-mono text-center">⚠️ ${profile.cheatViolations} VIOLATIONS</div>` : ''}
 
                                     <div class="space-y-2">
-                                        ${Object.entries(sections).map(([secName, secData]) => `
+                                        ${Object.entries(sections).map(([secName, secData]) => {
+                                            // LOGIC FIX: Check if passed is null (Pending), true (Passed), or false (Failed)
+                                            let statusIndicator = '';
+                                            
+                                            if (secData.type === 'mcq') {
+                                                statusIndicator = `<span class="text-[10px] ${secData.passed ? 'text-emerald-400' : 'text-red-400'}">${secData.score}%</span>`;
+                                            } else {
+                                                if (secData.passed === null) {
+                                                    // PENDING: Show Buttons
+                                                    statusIndicator = `
+                                                        <div class="flex gap-1">
+                                                            <button onclick="window.adminGrade('${sub.uid}', '${secName}', true)" class="bg-emerald-500/20 hover:bg-emerald-500 text-emerald-400 hover:text-white p-1 rounded transition"><i class="ph ph-check"></i></button>
+                                                            <button onclick="window.adminGrade('${sub.uid}', '${secName}', false)" class="bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white p-1 rounded transition"><i class="ph ph-x"></i></button>
+                                                        </div>`;
+                                                } else {
+                                                    // GRADED: Show Text
+                                                    statusIndicator = secData.passed 
+                                                        ? `<span class="text-[10px] text-emerald-400 font-bold">APPROVED</span>` 
+                                                        : `<span class="text-[10px] text-red-400 font-bold">REJECTED</span>`;
+                                                }
+                                            }
+
+                                            return `
                                             <div class="flex justify-between items-center bg-slate-900/50 p-2 rounded border border-white/5">
                                                 <span class="text-[10px] text-slate-400 font-mono truncate w-20">${secName}</span>
-                                                ${secData.type !== 'mcq' ? `
-                                                    <div class="flex gap-1">
-                                                        <button onclick="window.adminGrade('${sub.uid}', '${secName}', true)" class="bg-emerald-500/20 hover:bg-emerald-500 text-emerald-400 hover:text-white p-1 rounded transition"><i class="ph ph-check"></i></button>
-                                                        <button onclick="window.adminGrade('${sub.uid}', '${secName}', false)" class="bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white p-1 rounded transition"><i class="ph ph-x"></i></button>
-                                                    </div>
-                                                ` : `<span class="text-[10px] ${secData.passed ? 'text-emerald-400' : 'text-red-400'}">${secData.score}%</span>`}
-                                            </div>
-                                        `).join('')}
+                                                ${statusIndicator}
+                                            </div>`;
+                                        }).join('')}
                                     </div>
                                 </div>
                             `;
@@ -408,7 +425,6 @@
                 showView('admin');
             } catch (e) { alert(e.message); showView('admin'); }
         }
-
         window.adminGrade = async (uid, sectionName, passed) => {
             if(!confirm(`Mark ${sectionName} as ${passed ? 'PASSED' : 'FAILED'}?`)) return;
             showView('loading');
@@ -418,14 +434,17 @@
                 if(snap.exists()) {
                     const data = snap.data();
                     const results = data.sectionResults;
+                    
                     if(results[sectionName]) {
+                        // 1. Update the specific section
                         results[sectionName].passed = passed;
                         await updateDoc(userRef, { sectionResults: results });
                         
-                        // Check if all graded
+                        // 2. Check for PENDING sections (passed === null)
                         const allSections = Object.values(results);
-                        const pendingSections = allSections.filter(s => s.type !== 'mcq' && s.passed === undefined);
+                        const pendingSections = allSections.filter(s => s.passed === null);
                         
+                        // 3. Only finalize if NO pending sections remain
                         if (pendingSections.length === 0) {
                             const isAllPassed = allSections.every(s => s.passed === true);
                             const studentEmail = data.email;
@@ -442,14 +461,15 @@
                                 })
                             });
                             
-                            alert(`Grading Complete. Student ${isAllPassed ? 'Passed' : 'Failed'}. Email sent.`);
+                            alert(`Grading Complete. Final Status: ${isAllPassed ? 'PASSED' : 'FAILED'}. Notification sent.`);
                         }
+                        
+                        // 4. Refresh UI (Buttons will disappear because passed is no longer null)
                         loadAdminData();
                     }
                 }
             } catch(e) { alert(e.message); loadAdminData(); }
         }
-
         // --- TEST FLOW ---
         window.initTestFlow = async () => {
             showView('loading');
@@ -622,7 +642,8 @@
 
                 let sectionData = {
                     score: 0,
-                    passed: false,
+                    // FIX: If manuals exist, status is NULL (Pending). If only MCQs, calculate pass/fail immediately.
+                    passed: (manuals.length > 0) ? null : false, 
                     requiresReview: manuals.length > 0,
                     type: (mcqs.length > 0 && manuals.length > 0) ? 'mixed' : (mcqs.length > 0 ? 'mcq' : 'manual')
                 };
@@ -630,25 +651,20 @@
                 if (mcqs.length > 0) {
                     let correct = 0;
                     mcqs.forEach(q => {
-                        // --- THE FIX STARTS HERE ---
-                        // 1. Get both values safely
                         let studentAns = userAnswers[q.id];
                         let correctAns = q.correctAnswer;
-
-                        // 2. Normalize: Convert to String and Trim Spaces
-                        // This fixes the "30" vs 30 issue and the "Exact " vs "Exact" issue
                         if (studentAns && String(studentAns).trim() === String(correctAns).trim()) {
                             correct++;
-                        } else {
-                            // Optional: Console log mistakes for debugging
-                            console.log(`Failed Q: ${q.id} | Student: "${studentAns}" vs Correct: "${correctAns}"`);
                         }
-                        // --- THE FIX ENDS HERE ---
                     });
                     
                     const pct = Math.round((correct / mcqs.length) * 100);
                     sectionData.score = pct;
-                    sectionData.passed = pct >= 60; // 60% Benchmark
+                    
+                    // Only set passed status if there are NO manual questions in this section
+                    if (manuals.length === 0) {
+                        sectionData.passed = pct >= 60;
+                    }
                     
                     totalScore += pct;
                     mcqSectionCount++;
@@ -657,10 +673,8 @@
                 sectionResults[secName] = sectionData;
             });
 
-            // Calculate Final Score
             const finalScore = mcqSectionCount > 0 ? Math.round(totalScore / mcqSectionCount) : 0;
             
-            // Save to Database
             const userRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'data');
             
             await updateDoc(userRef, { 
