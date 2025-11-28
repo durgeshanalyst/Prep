@@ -412,22 +412,59 @@
             } catch (e) { alert(e.message); showView('admin'); }
         }
 
+        // UPDATED ADMIN GRADING FUNCTION
         window.adminGrade = async (uid, sectionName, passed) => {
             if(!confirm(`Mark ${sectionName} as ${passed ? 'PASSED' : 'FAILED'}?`)) return;
+            
             showView('loading');
             try {
+                // 1. Update Firestore
                 const userRef = doc(db, 'artifacts', appId, 'users', uid, 'profile', 'data');
                 const snap = await getDoc(userRef);
+                
                 if(snap.exists()) {
                     const data = snap.data();
                     const results = data.sectionResults;
+                    
                     if(results[sectionName]) {
                         results[sectionName].passed = passed;
                         await updateDoc(userRef, { sectionResults: results });
-                        loadAdminData();
+                        
+                        // 2. CHECK IF ALL SECTIONS ARE GRADED
+                        const allSections = Object.values(results);
+                        const pendingSections = allSections.filter(s => s.type !== 'mcq' && s.passed === undefined);
+                        
+                        // If no pending sections left, we finalize the result
+                        if (pendingSections.length === 0) {
+                            const isAllPassed = allSections.every(s => s.passed === true);
+                            const studentEmail = data.email;
+
+                            console.log("All sections graded. Final Result:", isAllPassed ? "PASS" : "FAIL");
+                            console.log("Triggering Email Notification...");
+
+                            // 3. CALL GOOGLE APPS SCRIPT TO SEND EMAIL
+                            await fetch(GAS_API_URL, {
+                                method: 'POST',
+                                mode: 'no-cors',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    type: 'resultNotification',
+                                    email: studentEmail,
+                                    passed: isAllPassed
+                                })
+                            });
+                            
+                            alert(`Grading Complete. Student has ${isAllPassed ? 'PASSED' : 'FAILED'}. Email sent.`);
+                        }
+                        
+                        loadAdminData(); // Refresh UI
                     }
                 }
-            } catch(e) { alert(e.message); loadAdminData(); }
+            } catch(e) { 
+                console.error(e);
+                alert("Error updating grade: " + e.message); 
+                loadAdminData(); 
+            }
         }
 
         // --- TEST FLOW ---
@@ -748,7 +785,7 @@
                 <div class="relative w-16 h-16">
                     <div class="absolute inset-0 rounded-full border-4 border-indigo-500/30"></div>
                     <div class="absolute inset-0 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin"></div>
-                </div>a
+                </div>
                 <p class="text-indigo-400 font-mono text-xs animate-pulse tracking-widest">PROCESSING_DATA...</p>
             </div>
         </div>
