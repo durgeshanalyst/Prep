@@ -3,109 +3,761 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Prep by LBA | Assessment Engine</title>
-    
-    <!-- Tailwind CSS -->
+    <title>Assessment Portal | LBA Intelligence</title>
+    <link rel="icon" type="image/png" href="https://www.letsbeanalyst.com/asset/LBA.png">
+
+    <!-- Dependencies -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Code Font -->
-    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 
-    <!-- Custom CSS -->
-    <link rel="stylesheet" href="css/style.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* --- THEME ENGINE --- */
+        .system-bg {
+            background-color: #020617;
+            background-image: 
+                radial-gradient(circle at 50% 0%, #1e1b4b 0%, transparent 70%),
+                radial-gradient(circle at 80% 90%, #3e0078 0%, transparent 50%);
+        }
+        .grid-overlay {
+            background-size: 40px 40px;
+            background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            mask-image: radial-gradient(circle at center, black 40%, transparent 100%);
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+        .glass-panel-danger {
+            background: rgba(69, 10, 10, 0.4);
+            border: 1px solid rgba(248, 113, 113, 0.2);
+        }
+
+        /* --- INPUTS --- */
+        .system-input {
+            background: rgba(2, 6, 23, 0.6);
+            border: 1px solid rgba(51, 65, 85, 0.5);
+            color: #e2e8f0;
+            transition: all 0.2s ease;
+        }
+        .system-input:focus {
+            background: rgba(2, 6, 23, 0.9);
+            border-color: #818cf8;
+            box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.2);
+            outline: none;
+        }
+
+        /* --- ANIMATIONS --- */
+        .scan-line {
+            position: absolute; top: 0; left: 0; width: 100%; height: 2px;
+            background: rgba(99, 102, 241, 0.8);
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.8);
+            animation: scan 3s ease-in-out infinite; opacity: 0.6; pointer-events: none; z-index: 10;
+        }
+        @keyframes scan { 
+            0% { top: 0; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } 
+        }
+        .fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .pulse-ring {
+            box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            animation: pulse-red 2s infinite;
+        }
+        @keyframes pulse-red {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        /* Utility */
+        .hidden-view { display: none !important; }
+        /* Disable selection for anti-cheat */
+        .no-select { user-select: none; -webkit-user-select: none; }
+    </style>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, serverTimestamp, collection, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- CONFIGURATION ---
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyspagogjDAp0rhW8ps4YfuHKze6-CnCR7shrKhYdbKl545_lo8-2WalgRXlxZ9mR1k/exec"; 
+        const appId = 'analyst-test-v1';
+        const ADMIN_EMAILS = ['admin@lba.com', 'admin@test.com']; 
+        
+        const firebaseConfig = {
+            apiKey: "AIzaSyC0DcjMDvbMJKJlSAizsF7qON1qQASK7Kw",
+            authDomain: "prep-at-lba.firebaseapp.com",
+            projectId: "prep-at-lba",
+            storageBucket: "prep-at-lba.firebasestorage.app",
+            messagingSenderId: "17706395280",
+            appId: "1:17706395280:web:7a0a1b38544f3514e55a15"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // --- STATE ---
+        let currentUser = null;
+        let isAdmin = false;
+        let allQuestions = [];
+        let groupedQuestions = {}; 
+        let sections = []; 
+        let currentSectionIndex = 0;
+        let currentQuestionIndex = 0; 
+        let userAnswers = {}; 
+        let cheatViolations = 0; 
+        let isTestActive = false; 
+        
+        let mediaRecorder;
+        let recordedChunks = [];
+        let videoTimerInterval;
+        let videoSeconds = 0;
+
+        // --- DOM ELEMENTS ---
+        const views = {
+            auth: document.getElementById('view-auth'),
+            dashboard: document.getElementById('view-dashboard'),
+            admin: document.getElementById('view-admin'),
+            terms: document.getElementById('view-terms'),
+            sectionIntro: document.getElementById('view-section-intro'),
+            test: document.getElementById('view-test'),
+            loading: document.getElementById('view-loading')
+        };
+
+        // --- ANTI-CHEAT ---
+        function enableAntiCheat() {
+            isTestActive = true;
+            cheatViolations = 0;
+            document.addEventListener("visibilitychange", handleVisibilityChange);
+            document.addEventListener('contextmenu', event => event.preventDefault());
+            document.addEventListener('copy', e => e.preventDefault());
+            document.addEventListener('cut', e => e.preventDefault());
+            document.addEventListener('paste', e => e.preventDefault());
+        }
+
+        function disableAntiCheat() {
+            isTestActive = false;
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+        }
+
+        function handleVisibilityChange() {
+            if (document.hidden && isTestActive) {
+                cheatViolations++;
+                document.title = "⚠️ VIOLATION DETECTED";
+            } else {
+                document.title = "Assessment Portal | LBA";
+            }
+        }
+
+        // --- AUTH ---
+        onAuthStateChanged(auth, async (user) => {
+            currentUser = user;
+            if (user) {
+                isAdmin = ADMIN_EMAILS.includes(user.email) || user.email.includes('admin');
+                
+                if (isAdmin) {
+                    loadAdminData();
+                } else {
+                    // STUDENT LOGIC
+                    const userRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data');
+                    try {
+                        let snap = await getDoc(userRef);
+                        
+                        if (!snap.exists()) {
+                            await setDoc(userRef, { email: user.email, testStatus: 'pending', sectionResults: {} });
+                            snap = await getDoc(userRef);
+                        }
+
+                        // Register in Submissions List safely
+                        try {
+                            const subRef = doc(db, 'artifacts', appId, 'submissions', user.email);
+                            await setDoc(subRef, {
+                                uid: user.uid,
+                                email: user.email,
+                                lastActive: serverTimestamp()
+                            }, { merge: true });
+                        } catch (regErr) { console.warn("Background registration skipped"); }
+
+                        showDashboard(snap.data());
+
+                    } catch (e) {
+                        alert("System Error: " + e.message);
+                        showView('auth');
+                    }
+                }
+            } else {
+                showView('auth');
+            }
+        });
+
+        // LOGIN HANDLER (With Auto-Fix Logic)
+        document.getElementById('auth-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorMsg = document.getElementById('auth-error');
+            
+            errorMsg.classList.add('hidden');
+            showView('loading');
+
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+            } catch (error) {
+                // AUTO-ACCOUNT CREATION / FIX
+                if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+                     try {
+                        await createUserWithEmailAndPassword(auth, email, password);
+                     } catch (createErr) {
+                         showView('auth');
+                         let message = "Setup Failed: " + createErr.message;
+                         if (createErr.code === 'auth/email-already-in-use') {
+                             message = "Incorrect Password. Please try again.";
+                         }
+                         errorMsg.textContent = message;
+                         errorMsg.classList.remove('hidden');
+                     }
+                } else {
+                    showView('auth');
+                    errorMsg.textContent = "Error: " + error.message;
+                    errorMsg.classList.remove('hidden');
+                }
+            }
+        });
+
+        // --- GLOBAL EXPORTS FOR UI ---
+        window.signOutUser = () => signOut(auth);
+        
+        // --- DASHBOARD ---
+        function showDashboard(userData) {
+            showView('dashboard');
+            document.getElementById('dash-email').textContent = currentUser.email;
+            
+            const isCompleted = userData.testStatus === 'completed';
+            const sectionResults = userData.sectionResults || {};
+            const allSections = Object.values(sectionResults);
+            const isFullyPassed = allSections.length > 0 && allSections.every(s => s.passed === true);
+
+            // Render Journey Map
+            document.getElementById('journey-map').innerHTML = `
+                <div class="flex items-center justify-between relative mb-8 lg:mb-0 lg:w-2/3 mx-auto">
+                    <div class="absolute left-0 top-1/2 transform -translate-y-1/2 w-full h-0.5 bg-slate-700 -z-10"></div>
+                    
+                    ${['Trial', 'Assessment', 'Mentorship', 'Placed'].map((step, i) => {
+                        let active = false;
+                        let completed = false;
+                        if(i === 0) completed = true;
+                        if(i === 1) { active = !isFullyPassed; completed = isFullyPassed || isCompleted; }
+                        if(i === 2) { active = isFullyPassed; }
+                        
+                        let colorClass = completed ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.5)]' : 
+                                         active ? 'bg-indigo-600 text-white shadow-[0_0_15px_rgba(79,70,229,0.5)]' : 'bg-slate-800 text-slate-500 border border-slate-700';
+                        
+                        let icon = completed ? '<i class="ph ph-check"></i>' : (i + 1);
+
+                        return `
+                        <div class="flex flex-col items-center gap-2">
+                            <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all z-10 ${colorClass}">
+                                ${icon}
+                            </div>
+                            <span class="text-[10px] font-mono uppercase tracking-wider ${active || completed ? 'text-white' : 'text-slate-600'}">${step}</span>
+                        </div>`;
+                    }).join('')}
+                </div>
+            `;
+
+            const content = document.getElementById('dashboard-content');
+            
+            if (isFullyPassed) {
+                // CONGRATULATIONS
+                content.innerHTML = `
+                    <div class="glass-panel p-10 rounded-2xl text-center border-t-4 border-emerald-500 relative overflow-hidden">
+                        <div class="absolute inset-0 bg-emerald-500/5 z-0"></div>
+                        <div class="relative z-10">
+                            <div class="inline-flex items-center justify-center w-20 h-20 bg-emerald-500/20 text-emerald-400 rounded-full mb-6 ring-1 ring-emerald-500/50 shadow-[0_0_30px_rgba(16,185,129,0.2)]">
+                                <i class="ph ph-trophy text-4xl"></i>
+                            </div>
+                            <h2 class="text-3xl font-bold text-white mb-2 tracking-tight">Phase 2 Complete</h2>
+                            <p class="text-emerald-400/80 font-mono text-sm mb-8">CLEARANCE GRANTED FOR MENTORSHIP</p>
+                            
+                            <div class="bg-slate-900/50 border border-emerald-500/20 p-6 rounded-xl text-left max-w-lg mx-auto">
+                                <h3 class="font-bold text-emerald-300 mb-1 flex items-center gap-2"><i class="ph ph-check-circle"></i> Onboarding Unlocked</h3>
+                                <p class="text-slate-400 text-sm">Your analytical DNA has been validated. A mentor has been assigned to your profile.</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#10b981', '#34d399', '#059669'] });
+
+            } else if (isCompleted) {
+                 // PENDING RESULTS
+                 let resultsHTML = '';
+                 for (const [section, data] of Object.entries(sectionResults)) {
+                    let badge = data.passed 
+                        ? `<span class="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded border border-emerald-500/30">PASSED</span>` 
+                        : (data.type === 'mcq' ? `<span class="text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded border border-red-500/30">FAILED (${data.score}%)</span>` 
+                        : `<span class="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded border border-yellow-500/30 animate-pulse">ANALYZING...</span>`);
+
+                    resultsHTML += `
+                        <div class="flex justify-between items-center p-4 bg-slate-900/50 rounded-lg border border-white/5">
+                            <div>
+                                <h3 class="font-bold text-slate-200 text-sm">${section}</h3>
+                                <p class="text-[10px] text-slate-500 uppercase font-mono mt-0.5">${data.type === 'mcq' ? 'Multiple Choice' : data.type}</p>
+                            </div>
+                            ${badge}
+                        </div>
+                    `;
+                 }
+
+                 const violationMsg = userData.cheatViolations > 0 
+                    ? `<div class="mt-6 bg-red-500/10 border border-red-500/30 p-4 rounded-lg flex items-center gap-3 text-red-400 text-xs font-mono"><i class="ph ph-warning text-lg"></i> <span>SECURITY ALERT: ${userData.cheatViolations} INTEGRITY VIOLATIONS LOGGED</span></div>` 
+                    : '';
+
+                 content.innerHTML = `
+                    <div class="text-center mb-8">
+                        <h2 class="text-2xl font-bold text-white tracking-tight">Assessment Submitted</h2>
+                        <p class="text-slate-400 text-sm mt-2">Data transmission complete. Awaiting manual review of qualitative sections.</p>
+                    </div>
+                    <div class="max-w-2xl mx-auto space-y-3">
+                        ${resultsHTML}
+                        ${violationMsg}
+                    </div>
+                `;
+            } else {
+                // START SCREEN
+                content.innerHTML = `
+                    <div class="glass-panel p-10 rounded-2xl text-center border-t-4 border-indigo-500 max-w-2xl mx-auto">
+                        <div class="w-16 h-16 bg-indigo-500/20 text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(99,102,241,0.3)]">
+                            <i class="ph ph-shield-check text-3xl"></i>
+                        </div>
+                        <h2 class="text-2xl font-bold text-white mb-2">Secure Environment Ready</h2>
+                        <p class="text-slate-400 text-sm mb-8 px-8">This assessment is proctored. Visual and browser activity will be monitored for integrity assurance.</p>
+                        <button onclick="window.initTestFlow()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-10 py-4 rounded-lg transition-all shadow-lg shadow-indigo-500/30 hover:scale-105 uppercase tracking-wide text-xs">
+                            Initiate Assessment Protocol
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        // --- ADMIN DASHBOARD ---
+        window.loadAdminData = async () => {
+            showView('loading');
+            const container = document.getElementById('admin-grid');
+            container.innerHTML = '';
+            
+            try {
+                const q = query(collection(db, 'artifacts', appId, 'submissions'));
+                const querySnapshot = await getDocs(q);
+                
+                if(querySnapshot.empty) {
+                    container.innerHTML = `<div class="col-span-full text-center text-slate-500 py-10 font-mono">NO DATA STREAMS FOUND</div>`;
+                    showView('admin'); return;
+                }
+
+                let html = '';
+                for(const docSnap of querySnapshot.docs) {
+                    const sub = docSnap.data();
+                    const userProfileRef = doc(db, 'artifacts', appId, 'users', sub.uid, 'profile', 'data');
+                    try {
+                        const profileSnap = await getDoc(userProfileRef);
+                        if(profileSnap.exists()) {
+                            const profile = profileSnap.data();
+                            const sections = profile.sectionResults || {};
+                            
+                            html += `
+                                <div class="glass-panel p-5 rounded-xl border-l-4 ${profile.cheatViolations > 0 ? 'border-red-500' : 'border-emerald-500'} relative group hover:bg-slate-800/80 transition">
+                                    <div class="flex justify-between items-start mb-4">
+                                        <div>
+                                            <h3 class="font-bold text-white text-sm truncate w-40" title="${profile.email}">${profile.email}</h3>
+                                            <p class="text-[10px] text-slate-500 font-mono mt-1">${sub.uid.slice(0,8)}...</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <span class="block text-2xl font-bold text-indigo-400">${profile.score || 0}%</span>
+                                        </div>
+                                    </div>
+                                    
+                                    ${profile.cheatViolations > 0 ? `<div class="mb-4 bg-red-500/10 border border-red-500/30 px-2 py-1 rounded text-[10px] text-red-400 font-mono text-center">⚠️ ${profile.cheatViolations} VIOLATIONS</div>` : ''}
+
+                                    <div class="space-y-2">
+                                        ${Object.entries(sections).map(([secName, secData]) => `
+                                            <div class="flex justify-between items-center bg-slate-900/50 p-2 rounded border border-white/5">
+                                                <span class="text-[10px] text-slate-400 font-mono truncate w-20">${secName}</span>
+                                                ${secData.type !== 'mcq' ? `
+                                                    <div class="flex gap-1">
+                                                        <button onclick="window.adminGrade('${sub.uid}', '${secName}', true)" class="bg-emerald-500/20 hover:bg-emerald-500 text-emerald-400 hover:text-white p-1 rounded transition"><i class="ph ph-check"></i></button>
+                                                        <button onclick="window.adminGrade('${sub.uid}', '${secName}', false)" class="bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white p-1 rounded transition"><i class="ph ph-x"></i></button>
+                                                    </div>
+                                                ` : `<span class="text-[10px] ${secData.passed ? 'text-emerald-400' : 'text-red-400'}">${secData.score}%</span>`}
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    } catch(e) { console.error(e); }
+                }
+                container.innerHTML = html;
+                showView('admin');
+            } catch (e) { alert(e.message); showView('admin'); }
+        }
+
+        window.adminGrade = async (uid, sectionName, passed) => {
+            if(!confirm(`Mark ${sectionName} as ${passed ? 'PASSED' : 'FAILED'}?`)) return;
+            showView('loading');
+            try {
+                const userRef = doc(db, 'artifacts', appId, 'users', uid, 'profile', 'data');
+                const snap = await getDoc(userRef);
+                if(snap.exists()) {
+                    const data = snap.data();
+                    const results = data.sectionResults;
+                    if(results[sectionName]) {
+                        results[sectionName].passed = passed;
+                        await updateDoc(userRef, { sectionResults: results });
+                        loadAdminData();
+                    }
+                }
+            } catch(e) { alert(e.message); loadAdminData(); }
+        }
+
+        // --- TEST FLOW ---
+        window.initTestFlow = async () => {
+            showView('loading');
+            try {
+                const res = await fetch(`${GAS_API_URL}?op=getQuestions`);
+                const json = await res.json();
+                allQuestions = (json.data && json.data.length > 0) ? json.data : getMockQuestions();
+                groupedQuestions = allQuestions.reduce((acc, q) => {
+                    const cat = q.category || 'General';
+                    if (!acc[cat]) acc[cat] = [];
+                    acc[cat].push(q); return acc;
+                }, {});
+                sections = Object.keys(groupedQuestions);
+                currentSectionIndex = 0; currentQuestionIndex = 0; userAnswers = {};
+                showView('terms');
+            } catch(e) { alert("Network Error"); showDashboard({ testStatus: 'pending' }); }
+        };
+
+        window.acceptTerms = () => {
+            if(document.getElementById('terms-checkbox').checked) { enableAntiCheat(); showSectionIntro(); } 
+            else { alert("Acceptance Required"); }
+        }
+
+        function showSectionIntro() {
+            const sectionName = sections[currentSectionIndex];
+            document.getElementById('intro-title').textContent = sectionName;
+            document.getElementById('intro-desc').textContent = `${groupedQuestions[sectionName].length} Questions Pending`;
+            showView('sectionIntro');
+        }
+
+        window.startSection = () => { currentQuestionIndex = 0; showView('test'); renderQuestion(); };
+
+        function renderQuestion() {
+            const sectionName = sections[currentSectionIndex];
+            const q = groupedQuestions[sectionName][currentQuestionIndex];
+            const qType = q.type ? q.type.toLowerCase() : 'mcq';
+            
+            document.getElementById('q-category').textContent = `${sectionName} :: Q${currentQuestionIndex + 1}`;
+            
+            const container = document.getElementById('question-container');
+            let html = `<h3 class="text-xl md:text-2xl font-medium text-slate-100 mb-8 leading-relaxed no-select">${q.question}</h3>`;
+
+            if (qType === 'text') {
+                html += `<textarea id="text-answer" class="system-input w-full h-48 p-4 rounded-lg resize-none" placeholder="Enter analysis..."></textarea>`;
+            } else if (qType === 'video') {
+                html += `
+                    <div class="glass-panel p-4 rounded-xl border border-indigo-500/30">
+                        <div class="relative bg-black rounded-lg overflow-hidden aspect-video shadow-2xl border border-white/10 mb-6">
+                            <video id="preview" autoplay muted class="w-full h-full object-cover transform scale-x-[-1]"></video>
+                            <div id="video-timer-overlay" class="hidden absolute top-4 left-4 bg-red-900/80 backdrop-blur text-red-100 px-3 py-1 rounded text-xs font-mono flex items-center border border-red-500/30"><div class="w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse"></div><span id="video-timer">00:00</span></div>
+                        </div>
+                        <div class="flex justify-center gap-4">
+                            <button id="btn-start-rec" class="bg-red-600 hover:bg-red-500 text-white px-8 py-3 rounded-lg flex items-center shadow-[0_0_20px_rgba(220,38,38,0.4)] transition"><i class="ph ph-record mr-2"></i> REC</button>
+                            <button id="btn-stop-rec" class="hidden bg-slate-700 text-slate-300 px-8 py-3 rounded-lg border border-white/10 flex items-center"><i class="ph ph-stop mr-2"></i> STOP</button>
+                        </div>
+                    </div>`;
+            } else {
+                html += `<div class="space-y-3 no-select">
+                    ${['optionA', 'optionB', 'optionC', 'optionD'].map(optKey => q[optKey] ? `
+                        <label class="flex items-center p-4 border border-white/10 bg-white/5 rounded-lg cursor-pointer hover:bg-indigo-500/20 hover:border-indigo-500/50 transition group">
+                            <input type="radio" name="q" value="${q[optKey]}" class="h-4 w-4 bg-transparent border-slate-500 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0" onchange="window.saveAnswer('${q[optKey]}')">
+                            <span class="ml-4 text-slate-300 group-hover:text-white font-mono text-sm">${q[optKey]}</span>
+                        </label>
+                    ` : '').join('')}
+                </div>`;
+            }
+            container.innerHTML = html;
+            if (qType === 'video') initVideo();
+
+            const btn = document.getElementById('next-btn');
+            btn.textContent = (currentQuestionIndex === groupedQuestions[sectionName].length - 1 && currentSectionIndex === sections.length - 1) ? "FINALIZE PROTOCOL" : "NEXT MODULE";
+        }
+
+        window.saveAnswer = (val) => {
+            const qId = groupedQuestions[sections[currentSectionIndex]][currentQuestionIndex].id;
+            userAnswers[qId] = val;
+        };
+
+        function initVideo() {
+            const preview = document.getElementById('preview');
+            const startBtn = document.getElementById('btn-start-rec');
+            const stopBtn = document.getElementById('btn-stop-rec');
+            const timerDisplay = document.getElementById('video-timer');
+            const timerOverlay = document.getElementById('video-timer-overlay');
+
+            navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
+                preview.srcObject = stream;
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                    const reader = new FileReader();
+                    reader.readAsDataURL(blob);
+                    reader.onloadend = () => {
+                        const qId = groupedQuestions[sections[currentSectionIndex]][currentQuestionIndex].id;
+                        userAnswers[qId] = { type: 'video', data: reader.result };
+                    };
+                    stream.getTracks().forEach(track => track.stop());
+                    clearInterval(videoTimerInterval);
+                };
+                startBtn.onclick = () => {
+                    recordedChunks = []; mediaRecorder.start();
+                    startBtn.classList.add('hidden'); stopBtn.classList.remove('hidden'); timerOverlay.classList.remove('hidden');
+                    videoSeconds = 0; timerDisplay.textContent = "00:00";
+                    videoTimerInterval = setInterval(() => { videoSeconds++; const m = Math.floor(videoSeconds / 60).toString().padStart(2, '0'); const s = (videoSeconds % 60).toString().padStart(2, '0'); timerDisplay.textContent = `${m}:${s}`; }, 1000);
+                };
+                stopBtn.onclick = () => { mediaRecorder.stop(); stopBtn.textContent = "CAPTURED"; stopBtn.disabled = true; clearInterval(videoTimerInterval); };
+            }).catch(err => { console.error(err); alert("Camera blocked."); });
+        }
+
+        window.nextQuestion = async () => {
+            const sectionName = sections[currentSectionIndex];
+            const qs = groupedQuestions[sectionName];
+            const q = qs[currentQuestionIndex];
+            const qType = q.type ? q.type.toLowerCase() : 'mcq';
+
+            if (qType === 'text') { 
+                const val = document.getElementById('text-answer').value; 
+                if(!val) return alert("Input Required"); 
+                userAnswers[q.id] = { type: 'text', data: val }; 
+            }
+            if (qType === 'video' && !userAnswers[q.id]) return alert("Video Recording Required");
+            if (qType === 'mcq' && !userAnswers[q.id]) return alert("Selection Required");
+
+            if (qType !== 'mcq') {
+                showView('loading');
+                await fetch(GAS_API_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: currentUser.email, questionId: q.id, type: qType, fileData: userAnswers[q.id].data, answer: userAnswers[q.id].data }) });
+                showView('test');
+            }
+
+            if (currentQuestionIndex < qs.length - 1) { currentQuestionIndex++; renderQuestion(); } 
+            else { 
+                if (currentSectionIndex < sections.length - 1) { currentSectionIndex++; currentQuestionIndex = 0; showSectionIntro(); } 
+                else { finishTest(); }
+            }
+        };
+
+        async function finishTest() {
+            showView('loading'); disableAntiCheat(); 
+            let sectionResults = {}; let totalScore = 0; let mcqSections = 0;
+
+            sections.forEach(secName => {
+                const qs = groupedQuestions[secName];
+                const type = qs[0].type || 'mcq';
+                if (type === 'mcq') {
+                    let correct = 0; qs.forEach(q => { if (userAnswers[q.id] === q.correctAnswer) correct++; });
+                    const pct = Math.round((correct / qs.length) * 100);
+                    sectionResults[secName] = { type: 'mcq', score: pct, passed: pct >= 75 };
+                    totalScore += pct; mcqSections++;
+                } else {
+                    sectionResults[secName] = { type: type, status: 'pending', passed: false };
+                }
+            });
+
+            const finalScore = mcqSections > 0 ? Math.round(totalScore / mcqSections) : 0;
+            const userRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'data');
+            await updateDoc(userRef, { testStatus: 'completed', score: finalScore, sectionResults: sectionResults, cheatViolations: cheatViolations, submittedAt: serverTimestamp() });
+            
+            showDashboard({ testStatus: 'completed', sectionResults: sectionResults, cheatViolations: cheatViolations });
+        }
+
+        // --- UTILS ---
+        function showView(name) { 
+            ['view-auth', 'view-dashboard', 'view-admin', 'view-terms', 'view-section-intro', 'view-test', 'view-loading'].forEach(id => document.getElementById(id).classList.add('hidden-view'));
+            document.getElementById('view-' + name).classList.remove('hidden-view'); 
+        }
+        function getMockQuestions() { return [{ id: 1, type: 'mcq', category: 'SQL', question: 'SQL Keyword for data?', optionA: 'GET', optionB: 'SELECT', correctAnswer: 'SELECT' }]; }
+    </script>
 </head>
-<body class="bg-slate-50 text-slate-900 font-inter">
 
-    <!-- ================= VIEW 1: LANDING ================= -->
-    <div id="view-landing" class="view-section min-h-screen flex flex-col">
-        <nav class="w-full bg-white/80 backdrop-blur border-b border-slate-200 h-20 flex items-center justify-between px-8 fixed top-0 z-50">
-            <div class="font-bold text-2xl text-slate-800">LBA <span class="text-blue-600">Prep</span></div>
-            <button id="btn-login" class="text-sm font-semibold text-blue-600 hover:text-blue-800">Login / Signup</button>
-        </nav>
-        <header class="flex-grow flex items-center justify-center pt-20">
-            <div class="text-center space-y-6 fade-in">
-                <h1 class="text-6xl font-extrabold text-slate-900">Career Intelligence.</h1>
-                <p class="text-lg text-slate-600">Validate your Data Analytics skills with AI-driven assessments.</p>
-                <button id="hero-cta" class="bg-slate-900 text-white px-8 py-4 rounded-xl font-bold shadow-lg hover:-translate-y-1 transition">Get Started</button>
-            </div>
-        </header>
-    </div>
+<body class="system-bg text-slate-300 min-h-screen flex flex-col overflow-x-hidden selection:bg-indigo-500 selection:text-white">
 
-    <!-- ================= VIEW 2: DASHBOARD ================= -->
-    <div id="view-dashboard" class="view-section hidden min-h-screen flex flex-col fade-in">
-        <nav class="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-30 flex justify-between items-center">
-            <span class="font-bold text-slate-700">Dashboard</span>
-            <div class="flex items-center gap-4">
-                <span id="user-name" class="text-sm font-bold">User</span>
-                <button id="btn-logout" class="text-slate-400 hover:text-red-500"><i data-lucide="log-out" class="w-5 h-5"></i></button>
-            </div>
-        </nav>
-        <main class="max-w-6xl mx-auto w-full px-6 py-10 grid md:grid-cols-2 gap-8">
-            <!-- Pre-Career Card -->
-            <div class="bg-white p-8 rounded-2xl border border-slate-200 shadow hover:shadow-xl transition group cursor-pointer" onclick="app.selectTrack('aptitude')">
-                <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center mb-4"><i data-lucide="compass" class="w-6 h-6"></i></div>
-                <h3 class="text-xl font-bold mb-2">Pre-Career Assessment</h3>
-                <p class="text-slate-500 text-sm">Math, Logic & Basic Computing.</p>
-                <div class="mt-4 text-xs font-bold text-slate-400 uppercase">45 Mins • Auto-Submit</div>
-            </div>
-            <!-- Mock Interview Card -->
-            <div class="bg-white p-8 rounded-2xl border border-slate-200 shadow hover:shadow-xl transition group cursor-pointer" onclick="app.selectTrack('mock')">
-                <div class="w-12 h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center mb-4"><i data-lucide="code-2" class="w-6 h-6"></i></div>
-                <h3 class="text-xl font-bold mb-2">Technical Mock Interview</h3>
-                <p class="text-slate-500 text-sm">SQL, Python, PowerBI & Oral.</p>
-                <div class="mt-4 text-xs font-bold text-slate-400 uppercase">4 Rounds • 15 Mins Each</div>
-            </div>
-        </main>
-    </div>
+    <div class="absolute inset-0 grid-overlay pointer-events-none z-0"></div>
 
-    <!-- ================= VIEW 3: INSTRUCTIONS ================= -->
-    <div id="view-instructions" class="view-section hidden min-h-screen bg-white flex items-center justify-center p-6 fade-in">
-        <div class="max-w-2xl text-center">
-            <h2 id="inst-title" class="text-3xl font-bold mb-4">Ready?</h2>
-            <div class="bg-slate-50 p-6 rounded-xl text-left text-sm text-slate-700 space-y-2 mb-8">
-                <p>• <strong>Strict Timer:</strong> The test auto-submits when time runs out.</p>
-                <p>• <strong>No Cheating:</strong> Tab switching is monitored.</p>
-                <p>• <strong>Coding:</strong> Use the provided in-browser editor.</p>
+    <header class="w-full h-16 border-b border-white/5 flex items-center justify-between px-6 lg:px-12 fixed top-0 z-50 bg-[#020617]/80 backdrop-blur-md">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 p-[1px] shadow-lg">
+                <img src="https://www.letsbeanalyst.com/asset/lba-wb.png" class="w-full h-full rounded-full bg-[#020617] object-cover">
             </div>
-            <button onclick="app.startTest()" class="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-blue-700">Start Timer</button>
-            <button onclick="app.showView('dashboard')" class="ml-4 text-slate-500">Cancel</button>
+            <div class="flex flex-col leading-none">
+                <span class="text-white font-bold text-sm tracking-wide">Prep<span class="text-indigo-400">Origin</span></span>
+                <span class="text-[9px] text-slate-500 uppercase tracking-widest">Secure Assessment</span>
+            </div>
         </div>
-    </div>
-
-    <!-- ================= VIEW 4: TEST ENGINE ================= -->
-    <div id="view-test" class="view-section hidden min-h-screen bg-slate-100 flex flex-col">
-        <!-- Sticky Header with Timer -->
-        <header class="bg-white border-b h-16 px-6 flex items-center justify-between sticky top-0 z-40">
-            <div class="flex items-center gap-4">
-                <span id="round-badge" class="bg-slate-900 text-white px-2 py-1 rounded text-xs font-bold">ROUND 1</span>
-                <h2 id="section-title" class="font-bold text-slate-700">Logical Reasoning</h2>
+        <div class="flex items-center gap-4">
+            <div class="hidden md:flex items-center gap-2 text-[10px] font-mono text-emerald-400 bg-emerald-900/20 px-3 py-1 rounded-full border border-emerald-500/20">
+                <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                NODE_SECURE
             </div>
-            <div class="flex items-center gap-2 bg-slate-50 border px-3 py-1 rounded">
-                <i data-lucide="timer" class="w-4 h-4 text-blue-600"></i>
-                <span id="timer-display" class="font-mono font-bold text-lg">00:00</span>
+        </div>
+    </header>
+
+    <main class="flex-1 flex items-center justify-center relative z-10 px-4 pt-20 pb-10 w-full">
+        
+        <!-- 1. AUTH TERMINAL -->
+        <div id="view-auth" class="w-full max-w-6xl grid lg:grid-cols-12 gap-12 lg:gap-20 items-center fade-in">
+            <div class="lg:col-span-7 space-y-10 order-2 lg:order-1 text-center lg:text-left">
+                <div class="space-y-6">
+                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 text-xs font-mono"><i class="ph ph-shield-check"></i> Authorized Personnel Only</div>
+                    <h1 class="text-4xl md:text-6xl font-bold text-white leading-tight tracking-tight">Validate Your <br><span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400">Analytical DNA.</span></h1>
+                    <p class="text-lg text-slate-400 max-w-lg mx-auto lg:mx-0 leading-relaxed">Welcome to the LBA Pre-Test Protocol. This assessment analyzes your logical reasoning, data intuition, and technical readiness.</p>
+                </div>
+                <div class="grid grid-cols-3 gap-4 max-w-lg mx-auto lg:mx-0 pt-4 border-t border-white/5">
+                    <div><div class="text-2xl font-bold text-white">30</div><div class="text-[10px] text-slate-500 uppercase font-bold mt-1 tracking-wider">Questions</div></div>
+                    <div><div class="text-2xl font-bold text-indigo-400">45m</div><div class="text-[10px] text-slate-500 uppercase font-bold mt-1 tracking-wider">Duration</div></div>
+                    <div><div class="text-2xl font-bold text-emerald-400">AI</div><div class="text-[10px] text-slate-500 uppercase font-bold mt-1 tracking-wider">Scoring</div></div>
+                </div>
             </div>
-            <button onclick="app.submitTest()" class="text-xs font-bold text-red-500 border border-red-200 px-3 py-1 rounded hover:bg-red-50">Finish</button>
-        </header>
+            <div class="lg:col-span-5 order-1 lg:order-2 w-full max-w-md mx-auto perspective-1000">
+                <div class="glass-panel rounded-2xl relative overflow-hidden transform transition hover:scale-[1.01] duration-500">
+                    <div class="scan-line"></div>
+                    <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+                    <div class="p-8 md:p-10">
+                        <div class="mb-8 text-center"><h2 class="text-xl font-bold text-white tracking-wide">ACCESS TERMINAL</h2><p class="text-xs text-slate-500 font-mono mt-1">Please authenticate to begin.</p></div>
+                        <form id="auth-form" class="space-y-5">
+                            <div class="space-y-1"><label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Identity (Email)</label><div class="relative group"><i class="ph ph-user absolute left-3 top-3.5 text-slate-500 group-focus-within:text-indigo-400 transition-colors"></i><input type="email" id="email" required placeholder="candidate@email.com" class="system-input w-full pl-10 pr-4 py-3 rounded-lg text-sm font-mono placeholder-slate-600"></div></div>
+                            <div class="space-y-1"><label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Access Key (Password)</label><div class="relative group"><i class="ph ph-key absolute left-3 top-3.5 text-slate-500 group-focus-within:text-indigo-400 transition-colors"></i><input type="password" id="password" required placeholder="••••••••" class="system-input w-full pl-10 pr-4 py-3 rounded-lg text-sm font-mono tracking-widest placeholder-slate-600"></div></div>
+                            <div id="auth-error" class="hidden text-red-400 text-xs bg-red-500/10 border border-red-500/20 p-2 rounded text-center font-mono"></div>
+                            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-lg transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_30px_rgba(79,70,229,0.5)] flex items-center justify-center gap-2 group mt-4"><span class="tracking-wide text-xs font-bold uppercase">Initiate Session</span><i class="ph ph-arrow-right text-sm group-hover:translate-x-1 transition-transform"></i></button>
+                        </form>
+                    </div>
+                    <div class="bg-[#020617]/50 py-3 px-8 border-t border-white/5 flex justify-between items-center text-[10px] text-slate-500 font-mono"><span class="flex items-center gap-1"><i class="ph ph-lock-key"></i> 256-BIT ENCRYPTED</span><span>v2.0</span></div>
+                </div>
+            </div>
+        </div>
 
-        <main class="flex-grow p-6 max-w-5xl mx-auto w-full">
-            <!-- Dynamic Content Injection -->
-            <div id="test-container"></div>
-        </main>
-    </div>
+        <!-- 2. STUDENT DASHBOARD -->
+        <div id="view-dashboard" class="hidden-view w-full max-w-5xl fade-in">
+            <div class="glass-panel p-8 rounded-2xl">
+                <div class="flex flex-col lg:flex-row justify-between items-center mb-10 border-b border-white/5 pb-6">
+                    <div>
+                        <h2 class="text-2xl font-bold text-white">Candidate Dashboard</h2>
+                        <div class="flex items-center gap-2 mt-1">
+                            <div class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                            <p class="text-xs text-slate-400 font-mono" id="dash-email">loading...</p>
+                        </div>
+                    </div>
+                    <button onclick="window.signOutUser()" class="mt-4 lg:mt-0 text-xs text-slate-500 hover:text-red-400 transition font-mono border border-white/10 px-4 py-2 rounded hover:border-red-500/30">TERMINATE SESSION</button>
+                </div>
+                
+                <div id="journey-map" class="flex justify-center mb-10"></div>
+                <div id="dashboard-content"></div>
+            </div>
+        </div>
 
-    <!-- Firebase SDKs -->
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+        <!-- 3. ADMIN DASHBOARD -->
+        <div id="view-admin" class="hidden-view w-full max-w-7xl fade-in">
+            <div class="flex justify-between items-center mb-8">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-indigo-500/20 text-indigo-400 rounded flex items-center justify-center border border-indigo-500/30"><i class="ph ph-command text-xl"></i></div>
+                    <div><h1 class="text-xl font-bold text-white">Command Center</h1><p class="text-xs text-slate-500 font-mono">SUBMISSION_STREAM_ACTIVE</p></div>
+                </div>
+                <div class="flex gap-4">
+                    <button onclick="window.loadAdminData()" class="text-xs text-indigo-300 hover:text-white border border-indigo-500/30 px-4 py-2 rounded hover:bg-indigo-500/10 transition"><i class="ph ph-arrows-clockwise mr-1"></i> REFRESH STREAM</button>
+                    <button onclick="window.signOutUser()" class="text-xs text-red-400 hover:text-red-300 border border-red-500/30 px-4 py-2 rounded hover:bg-red-500/10 transition">LOGOUT</button>
+                </div>
+            </div>
+            <div id="admin-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+        </div>
 
-    <!-- Local Scripts (Order Matters!) -->
-    <script src="/js/firebase-config.js"></script>
-    <script src="/js/data.js"></script>
-    <script src="/js/auth.js"></script>
-    <script src="/js/app.js"></script>
+        <!-- 4. TERMS -->
+        <div id="view-terms" class="hidden-view w-full max-w-2xl fade-in">
+            <div class="glass-panel-danger p-8 rounded-2xl relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-full h-1 bg-red-500"></div>
+                <div class="flex items-center gap-3 mb-6 text-red-400">
+                    <i class="ph ph-siren text-2xl animate-pulse"></i>
+                    <h2 class="text-xl font-bold text-white tracking-wide">PROCTORING PROTOCOLS</h2>
+                </div>
+                <div class="bg-black/40 border border-red-500/20 p-6 rounded-xl text-sm text-slate-300 space-y-4 font-mono mb-8">
+                    <p class="flex items-start gap-3"><span class="text-red-500">01.</span> Focus tracking enabled. Tab switching will flag your session.</p>
+                    <p class="flex items-start gap-3"><span class="text-red-500">02.</span> Clipboard functions (Copy/Paste) disabled.</p>
+                    <p class="flex items-start gap-3"><span class="text-red-500">03.</span> Video recording required for qualitative sections.</p>
+                </div>
+                <div class="flex items-center gap-3 mb-6 p-4 bg-white/5 rounded-lg border border-white/5 hover:border-white/20 transition cursor-pointer" onclick="document.getElementById('terms-checkbox').click()">
+                    <input type="checkbox" id="terms-checkbox" class="w-5 h-5 bg-transparent border-slate-500 rounded text-red-500 focus:ring-red-500 focus:ring-offset-0">
+                    <span class="text-xs text-slate-400">I acknowledge monitoring and consent to data recording.</span>
+                </div>
+                <button onclick="window.acceptTerms()" class="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 rounded-lg shadow-[0_0_20px_rgba(220,38,38,0.3)] transition">CONFIRM & INITIATE</button>
+            </div>
+        </div>
+
+        <!-- 5. SECTION INTRO -->
+        <div id="view-section-intro" class="hidden-view w-full max-w-xl text-center fade-in">
+            <div class="w-20 h-20 bg-indigo-500/20 text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-6 shadow-[0_0_40px_rgba(99,102,241,0.2)] border border-indigo-500/30">
+                <i class="ph ph-brackets-curly text-3xl"></i>
+            </div>
+            <h2 class="text-4xl font-bold text-white mb-2 tracking-tight" id="intro-title">MODULE 01</h2>
+            <p class="text-slate-400 font-mono text-sm mb-8" id="intro-desc">LOADING ASSETS...</p>
+            <button onclick="window.startSection()" class="bg-white text-black font-bold px-10 py-3 rounded-full hover:scale-105 transition shadow-[0_0_30px_rgba(255,255,255,0.3)]">BEGIN MODULE</button>
+        </div>
+
+        <!-- 6. TEST INTERFACE -->
+        <div id="view-test" class="hidden-view w-full max-w-4xl fade-in flex flex-col h-[80vh]">
+            <header class="glass-panel px-6 py-4 rounded-xl flex justify-between items-center mb-6">
+                <span class="font-mono text-indigo-400 text-sm tracking-wider" id="q-category">SYSTEM_READY</span>
+                <div class="flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/30 rounded-full">
+                    <div class="w-2 h-2 bg-red-500 rounded-full pulse-ring"></div>
+                    <span class="text-[9px] font-bold text-red-400 uppercase tracking-widest">REC</span>
+                </div>
+            </header>
+            
+            <main class="flex-1 glass-panel p-8 rounded-xl relative overflow-hidden flex flex-col justify-center">
+                <div id="question-container"></div>
+            </main>
+
+            <footer class="mt-6 flex justify-end">
+                <button onclick="window.nextQuestion()" id="next-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-8 py-3 rounded-lg shadow-lg transition flex items-center gap-2">
+                    NEXT DATA POINT <i class="ph ph-caret-right"></i>
+                </button>
+            </footer>
+        </div>
+
+        <!-- LOADING OVERLAY -->
+        <div id="view-loading" class="hidden-view fixed inset-0 z-[100] bg-[#020617]/90 backdrop-blur-sm flex items-center justify-center">
+            <div class="flex flex-col items-center gap-4">
+                <div class="relative w-16 h-16">
+                    <div class="absolute inset-0 rounded-full border-4 border-indigo-500/30"></div>
+                    <div class="absolute inset-0 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin"></div>
+                </div>a
+                <p class="text-indigo-400 font-mono text-xs animate-pulse tracking-widest">PROCESSING_DATA...</p>
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="w-full py-6 text-center text-xs text-slate-600 border-t border-white/5 z-10 bg-[#020617]">
+        <p>&copy; 2025 LBA Analytics. Authorized Use Only.</p>
+    </footer>
 
 </body>
 </html>
