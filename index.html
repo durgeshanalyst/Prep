@@ -608,29 +608,75 @@
         };
 
         async function finishTest() {
-            showView('loading'); disableAntiCheat(); 
-            let sectionResults = {}; let totalScore = 0; let mcqSections = 0;
+            showView('loading'); 
+            disableAntiCheat(); 
+            
+            let sectionResults = {}; 
+            let totalScore = 0; 
+            let mcqSectionCount = 0;
 
             sections.forEach(secName => {
                 const qs = groupedQuestions[secName];
-                const type = qs[0].type || 'mcq';
-                if (type === 'mcq') {
-                    let correct = 0; qs.forEach(q => { if (userAnswers[q.id] === q.correctAnswer) correct++; });
-                    const pct = Math.round((correct / qs.length) * 100);
-                    sectionResults[secName] = { type: 'mcq', score: pct, passed: pct >= 50 };
-                    totalScore += pct; mcqSections++;
-                } else {
-                    sectionResults[secName] = { type: type, status: 'pending', passed: false };
+                const mcqs = qs.filter(q => !q.type || q.type === 'mcq');
+                const manuals = qs.filter(q => q.type === 'video' || q.type === 'text');
+
+                let sectionData = {
+                    score: 0,
+                    passed: false,
+                    requiresReview: manuals.length > 0,
+                    type: (mcqs.length > 0 && manuals.length > 0) ? 'mixed' : (mcqs.length > 0 ? 'mcq' : 'manual')
+                };
+
+                if (mcqs.length > 0) {
+                    let correct = 0;
+                    mcqs.forEach(q => {
+                        // --- THE FIX STARTS HERE ---
+                        // 1. Get both values safely
+                        let studentAns = userAnswers[q.id];
+                        let correctAns = q.correctAnswer;
+
+                        // 2. Normalize: Convert to String and Trim Spaces
+                        // This fixes the "30" vs 30 issue and the "Exact " vs "Exact" issue
+                        if (studentAns && String(studentAns).trim() === String(correctAns).trim()) {
+                            correct++;
+                        } else {
+                            // Optional: Console log mistakes for debugging
+                            console.log(`Failed Q: ${q.id} | Student: "${studentAns}" vs Correct: "${correctAns}"`);
+                        }
+                        // --- THE FIX ENDS HERE ---
+                    });
+                    
+                    const pct = Math.round((correct / mcqs.length) * 100);
+                    sectionData.score = pct;
+                    sectionData.passed = pct >= 60; // 60% Benchmark
+                    
+                    totalScore += pct;
+                    mcqSectionCount++;
                 }
+
+                sectionResults[secName] = sectionData;
             });
 
-            const finalScore = mcqSections > 0 ? Math.round(totalScore / mcqSections) : 0;
-            const userRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'data');
-            await updateDoc(userRef, { testStatus: 'completed', score: finalScore, sectionResults: sectionResults, cheatViolations: cheatViolations, submittedAt: serverTimestamp() });
+            // Calculate Final Score
+            const finalScore = mcqSectionCount > 0 ? Math.round(totalScore / mcqSectionCount) : 0;
             
-            showDashboard({ testStatus: 'completed', sectionResults: sectionResults, cheatViolations: cheatViolations });
+            // Save to Database
+            const userRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'data');
+            
+            await updateDoc(userRef, { 
+                testStatus: 'completed', 
+                score: finalScore, 
+                sectionResults: sectionResults, 
+                cheatViolations: cheatViolations, 
+                submittedAt: serverTimestamp() 
+            });
+            
+            showDashboard({ 
+                testStatus: 'completed', 
+                sectionResults: sectionResults, 
+                cheatViolations: cheatViolations 
+            });
         }
-
         // --- UTILS ---
         function showView(name) { 
             // Safety check
