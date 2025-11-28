@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Assessment Portal | LBA Intelligence</title>
+    <title>LBA Gateway | Admissions</title>
     <link rel="icon" type="image/png" href="https://www.letsbeanalyst.com/asset/LBA.png">
 
     <!-- Dependencies -->
@@ -80,7 +80,6 @@
 
         /* Utility */
         .hidden-view { display: none !important; }
-        /* Disable selection for anti-cheat */
         .no-select { user-select: none; -webkit-user-select: none; }
     </style>
 
@@ -156,7 +155,7 @@
                 cheatViolations++;
                 document.title = "⚠️ VIOLATION DETECTED";
             } else {
-                document.title = "Assessment Portal | LBA";
+                document.title = "LBA Gateway | Admissions";
             }
         }
 
@@ -179,7 +178,6 @@
                             snap = await getDoc(userRef);
                         }
 
-                        // Register in Submissions List safely
                         try {
                             const subRef = doc(db, 'artifacts', appId, 'submissions', user.email);
                             await setDoc(subRef, {
@@ -214,7 +212,6 @@
             try {
                 await signInWithEmailAndPassword(auth, email, password);
             } catch (error) {
-                // AUTO-ACCOUNT CREATION / FIX
                 if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
                      try {
                         await createUserWithEmailAndPassword(auth, email, password);
@@ -412,37 +409,28 @@
             } catch (e) { alert(e.message); showView('admin'); }
         }
 
-        // UPDATED ADMIN GRADING FUNCTION
         window.adminGrade = async (uid, sectionName, passed) => {
             if(!confirm(`Mark ${sectionName} as ${passed ? 'PASSED' : 'FAILED'}?`)) return;
-            
             showView('loading');
             try {
-                // 1. Update Firestore
                 const userRef = doc(db, 'artifacts', appId, 'users', uid, 'profile', 'data');
                 const snap = await getDoc(userRef);
-                
                 if(snap.exists()) {
                     const data = snap.data();
                     const results = data.sectionResults;
-                    
                     if(results[sectionName]) {
                         results[sectionName].passed = passed;
                         await updateDoc(userRef, { sectionResults: results });
                         
-                        // 2. CHECK IF ALL SECTIONS ARE GRADED
+                        // Check if all graded
                         const allSections = Object.values(results);
                         const pendingSections = allSections.filter(s => s.type !== 'mcq' && s.passed === undefined);
                         
-                        // If no pending sections left, we finalize the result
                         if (pendingSections.length === 0) {
                             const isAllPassed = allSections.every(s => s.passed === true);
                             const studentEmail = data.email;
 
-                            console.log("All sections graded. Final Result:", isAllPassed ? "PASS" : "FAIL");
-                            console.log("Triggering Email Notification...");
-
-                            // 3. CALL GOOGLE APPS SCRIPT TO SEND EMAIL
+                            // Send Email via GAS
                             await fetch(GAS_API_URL, {
                                 method: 'POST',
                                 mode: 'no-cors',
@@ -454,17 +442,12 @@
                                 })
                             });
                             
-                            alert(`Grading Complete. Student has ${isAllPassed ? 'PASSED' : 'FAILED'}. Email sent.`);
+                            alert(`Grading Complete. Student ${isAllPassed ? 'Passed' : 'Failed'}. Email sent.`);
                         }
-                        
-                        loadAdminData(); // Refresh UI
+                        loadAdminData();
                     }
                 }
-            } catch(e) { 
-                console.error(e);
-                alert("Error updating grade: " + e.message); 
-                loadAdminData(); 
-            }
+            } catch(e) { alert(e.message); loadAdminData(); }
         }
 
         // --- TEST FLOW ---
@@ -494,7 +477,7 @@
             const sectionName = sections[currentSectionIndex];
             document.getElementById('intro-title').textContent = sectionName;
             document.getElementById('intro-desc').textContent = `${groupedQuestions[sectionName].length} Questions Pending`;
-            showView('sectionIntro');
+            showView('section-intro'); 
         }
 
         window.startSection = () => { currentQuestionIndex = 0; showView('test'); renderQuestion(); };
@@ -630,8 +613,18 @@
 
         // --- UTILS ---
         function showView(name) { 
-            ['view-auth', 'view-dashboard', 'view-admin', 'view-terms', 'view-section-intro', 'view-test', 'view-loading'].forEach(id => document.getElementById(id).classList.add('hidden-view'));
-            document.getElementById('view-' + name).classList.remove('hidden-view'); 
+            // Safety check
+            const target = document.getElementById('view-' + name);
+            if (!target) {
+                console.error(`View 'view-${name}' not found.`);
+                return;
+            }
+            
+            ['view-auth', 'view-dashboard', 'view-admin', 'view-terms', 'view-section-intro', 'view-test', 'view-loading'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('hidden-view');
+            });
+            target.classList.remove('hidden-view'); 
         }
         function getMockQuestions() { return [{ id: 1, type: 'mcq', category: 'SQL', question: 'SQL Keyword for data?', optionA: 'GET', optionB: 'SELECT', correctAnswer: 'SELECT' }]; }
     </script>
@@ -644,10 +637,10 @@
     <header class="w-full h-16 border-b border-white/5 flex items-center justify-between px-6 lg:px-12 fixed top-0 z-50 bg-[#020617]/80 backdrop-blur-md">
         <div class="flex items-center gap-3">
             <div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 p-[1px] shadow-lg">
-                <img src="https://www.letsbeanalyst.com/asset/lba-wb.png" class="w-full h-full rounded-full bg-[#020617] object-cover">
+                <img src="https://www.letsbeanalyst.com/asset/LBA.png" class="w-full h-full rounded-full bg-[#020617] object-cover">
             </div>
             <div class="flex flex-col leading-none">
-                <span class="text-white font-bold text-sm tracking-wide">Prep<span class="text-indigo-400">Origin</span></span>
+                <span class="text-white font-bold text-sm tracking-wide">LBA<span class="text-indigo-400">.GATEWAY</span></span>
                 <span class="text-[9px] text-slate-500 uppercase tracking-widest">Secure Assessment</span>
             </div>
         </div>
@@ -670,8 +663,8 @@
                     <p class="text-lg text-slate-400 max-w-lg mx-auto lg:mx-0 leading-relaxed">Welcome to the LBA Pre-Test Protocol. This assessment analyzes your logical reasoning, data intuition, and technical readiness.</p>
                 </div>
                 <div class="grid grid-cols-3 gap-4 max-w-lg mx-auto lg:mx-0 pt-4 border-t border-white/5">
-                    <div><div class="text-2xl font-bold text-white">30</div><div class="text-[10px] text-slate-500 uppercase font-bold mt-1 tracking-wider">Questions</div></div>
-                    <div><div class="text-2xl font-bold text-indigo-400">45m</div><div class="text-[10px] text-slate-500 uppercase font-bold mt-1 tracking-wider">Duration</div></div>
+                    <div><div class="text-2xl font-bold text-white">20</div><div class="text-[10px] text-slate-500 uppercase font-bold mt-1 tracking-wider">Questions</div></div>
+                    <div><div class="text-2xl font-bold text-indigo-400">15m</div><div class="text-[10px] text-slate-500 uppercase font-bold mt-1 tracking-wider">Duration</div></div>
                     <div><div class="text-2xl font-bold text-emerald-400">AI</div><div class="text-[10px] text-slate-500 uppercase font-bold mt-1 tracking-wider">Scoring</div></div>
                 </div>
             </div>
