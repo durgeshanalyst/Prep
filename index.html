@@ -617,7 +617,7 @@
                 if (type === 'mcq') {
                     let correct = 0; qs.forEach(q => { if (userAnswers[q.id] === q.correctAnswer) correct++; });
                     const pct = Math.round((correct / qs.length) * 100);
-                    sectionResults[secName] = { type: 'mcq', score: pct, passed: pct >= 75 };
+                    sectionResults[secName] = { type: 'mcq', score: pct, passed: pct >= 50 };
                     totalScore += pct; mcqSections++;
                 } else {
                     sectionResults[secName] = { type: type, status: 'pending', passed: false };
